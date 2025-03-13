@@ -1,9 +1,21 @@
 
-# draft_dashboard.py (Streamlit UI for Live Draft Assistant)
+# draft_dashboard.py (Streamlit UI for Live Draft Assistant - FIXED VERSION)
 
 import streamlit as st
 import pandas as pd
-from globals import ALL_PLAYERS_PATH, ROSTER_SLOTS, NUM_TEAMS
+
+# 🔁 GLOBAL CONSTANTS MOVED HERE
+NUM_TEAMS = 10
+ROSTER_SLOTS = [
+    'C', '1B', '2B', '3B', 'SS',
+    'OF', 'OF', 'OF', 'UTIL',
+    'SP', 'SP', 'SP', 'SP', 'SP',
+    'RP', 'RP',
+    'BENCH', 'BENCH', 'BENCH', 'BENCH', 'BENCH'
+]
+ALL_PLAYERS_PATH = "data/all_players_with_points.csv"
+
+# 🔁 IMPORT LOCAL MODULE FUNCTIONS (they must be in same directory on Streamlit Cloud)
 from draft_value_analysis import calculate_positional_replacement_levels, calculate_por
 from live_draft_assistant import live_draft_suggestions, analyze_opponent_builds, build_draft_contingency_tree, add_pick
 
