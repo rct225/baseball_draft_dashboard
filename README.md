@@ -1,6 +1,9 @@
-# Streamlit Draft Assistant - FINAL PLUS
+# Streamlit Draft Assistant - FINAL AUTOPICK
 
-Includes positional need alerts, PORP-based picks, team roster tracking, and draft history.
-Upload your actual data files to `data/` folder to replace placeholder data.
+Includes:
+- Auto-calculated fantasy points
+- PORP-based suggestions
+- Team rosters and draft history
+- Snake draft autopick tracking
 
-Entry point: `draft_dashboard.py`
+Upload to Streamlit Cloud. Entry: `draft_dashboard.py`

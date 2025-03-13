@@ -58,7 +58,7 @@ def calculate_por(player_pool, replacements):
 
 # Streamlit Setup
 st.set_page_config(page_title="Fantasy Baseball Draft Assistant", layout="wide")
-st.title("⚾ Fantasy Baseball Draft Assistant - Final Enhanced Version")
+st.title("⚾ Fantasy Baseball Draft Assistant - Autopick Enabled")
 
 # Session Initialization
 if "drafted_players" not in st.session_state:
@@ -67,66 +67,51 @@ if "team_rosters" not in st.session_state:
     st.session_state.team_rosters = {f'Team_{i+1}': [] for i in range(NUM_TEAMS)}
 if "draft_history" not in st.session_state:
     st.session_state.draft_history = []
+if "draft_round" not in st.session_state:
+    st.session_state.draft_round = 0
+if "draft_pick_index" not in st.session_state:
+    st.session_state.draft_pick_index = 0
 
-# Draft Tracker UI
-st.sidebar.header("Draft Tracker")
+# Calculate draft order (snake style)
+def get_next_team(round_num, pick_index):
+    order = list(range(NUM_TEAMS))
+    if round_num % 2 != 0:
+        order.reverse()
+    return f"Team_{order[pick_index]+1}"
+
+# Calculate Remaining Player Pool
 remaining_pool = all_players[~all_players['Player'].isin(st.session_state.drafted_players)]
 replacements = calculate_replacement_levels(remaining_pool)
 remaining_pool = calculate_por(remaining_pool, replacements)
 
-draft_pick = st.sidebar.selectbox("Select Player to Draft", remaining_pool['Player'].tolist())
-draft_team = st.sidebar.selectbox("Assign to Team", [f'Team_{i+1}' for i in range(NUM_TEAMS)])
-if st.sidebar.button("Draft Player"):
-    st.session_state.drafted_players.append(draft_pick)
-    st.session_state.team_rosters[draft_team].append(draft_pick)
-    st.session_state.draft_history.append((draft_team, draft_pick))
-    st.sidebar.success(f"{draft_pick} drafted to {draft_team}")
+# Draft Picker
+current_team = get_next_team(st.session_state.draft_round, st.session_state.draft_pick_index)
+st.sidebar.header(f"Drafting Now: {current_team}")
+available_players = remaining_pool['Player'].tolist()
+pick = st.sidebar.selectbox("Select Player to Draft", available_players)
 
-# Positional Needs Alerts
-st.subheader("📣 Positional Need Alerts")
-for team, players in st.session_state.team_rosters.items():
-    pos_counts = defaultdict(int)
-    for p in players:
-        pos_list = all_players[all_players['Player'] == p]['Pos'].values
-        if len(pos_list):
-            for pos in eval(pos_list[0]):
-                pos_counts[pos] += 1
-    needs = {}
-    for pos in set(ROSTER_SLOTS):
-        required = ROSTER_SLOTS.count(pos)
-        if pos not in ['UTIL', 'BENCH'] and pos_counts.get(pos, 0) < required:
-            needs[pos] = required - pos_counts.get(pos, 0)
-    if needs:
-        st.markdown(f"**{team} Needs:** {needs}")
+if st.sidebar.button("Confirm Draft Pick"):
+    st.session_state.drafted_players.append(pick)
+    st.session_state.team_rosters[current_team].append(pick)
+    st.session_state.draft_history.append((current_team, pick))
 
-# Suggested Picks Based on Team Needs
-st.subheader("🎯 Suggested Picks Based on Team Needs")
-suggestions = {}
-for team, players in st.session_state.team_rosters.items():
-    needs = []
-    pos_counts = defaultdict(int)
-    for p in players:
-        pos_list = all_players[all_players['Player'] == p]['Pos'].values
-        if len(pos_list):
-            for pos in eval(pos_list[0]):
-                pos_counts[pos] += 1
-    for pos in set(ROSTER_SLOTS):
-        if pos not in ['UTIL', 'BENCH'] and pos_counts.get(pos, 0) < ROSTER_SLOTS.count(pos):
-            needs.append(pos)
-    filtered = remaining_pool[remaining_pool['Pos'].apply(lambda x: any(n in str(x) for n in needs))].head(5)
-    suggestions[team] = filtered[['Player', 'Pos', 'FantasyPoints', 'PORP']]
+    # Move to next team
+    st.session_state.draft_pick_index += 1
+    if st.session_state.draft_pick_index >= NUM_TEAMS:
+        st.session_state.draft_pick_index = 0
+        st.session_state.draft_round += 1
+    st.sidebar.success(f"{pick} drafted to {current_team}")
 
-for team, df in suggestions.items():
-    st.markdown(f"**Top Picks for {team} (based on current needs):**")
-    st.dataframe(df)
+# Display Suggestions
+st.subheader("📈 Top Suggested Picks (Based on PORP)")
+st.dataframe(remaining_pool[['Player', 'Pos', 'FantasyPoints', 'PORP']].head(15))
 
-# Draft History
+# Display Draft History
 st.subheader("📜 Draft History")
 if st.session_state.draft_history:
-    history_df = pd.DataFrame(st.session_state.draft_history, columns=['Team', 'Player'])
-    st.dataframe(history_df)
+    st.dataframe(pd.DataFrame(st.session_state.draft_history, columns=['Team', 'Player']))
 
-# Team Rosters
+# Display Team Rosters
 st.subheader("🏟️ Team Rosters")
 for team, players in st.session_state.team_rosters.items():
     st.markdown(f"### {team}")
