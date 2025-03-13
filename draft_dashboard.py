@@ -1,10 +1,11 @@
 
-# draft_dashboard.py (Streamlit UI for Live Draft Assistant - FIXED VERSION)
+# draft_dashboard_FULL.py (Fully Self-Contained Streamlit App)
 
 import streamlit as st
 import pandas as pd
+from collections import defaultdict
 
-# 🔁 GLOBAL CONSTANTS MOVED HERE
+# ====== GLOBALS (inlined) ======
 NUM_TEAMS = 10
 ROSTER_SLOTS = [
     'C', '1B', '2B', '3B', 'SS',
@@ -15,15 +16,93 @@ ROSTER_SLOTS = [
 ]
 ALL_PLAYERS_PATH = "data/all_players_with_points.csv"
 
-# 🔁 IMPORT LOCAL MODULE FUNCTIONS (they must be in same directory on Streamlit Cloud)
-from draft_value_analysis import calculate_positional_replacement_levels, calculate_por
-from live_draft_assistant import live_draft_suggestions, analyze_opponent_builds, build_draft_contingency_tree, add_pick
+# ====== DRAFT VALUE ANALYSIS FUNCTIONS (inlined) ======
+def calculate_positional_replacement_levels(player_pool, roster_slots, num_teams):
+    replacement_levels = {}
+    slots_needed = {pos: roster_slots.count(pos) * num_teams for pos in set(roster_slots) if pos != 'UTIL' and pos != 'BENCH'}
+    for pos, total_slots in slots_needed.items():
+        eligible_players = player_pool[player_pool['Pos'].apply(lambda x: pos in x)].sort_values(by='FantasyPoints', ascending=False)
+        if len(eligible_players) >= total_slots:
+            replacement_levels[pos] = eligible_players.iloc[total_slots - 1]['FantasyPoints']
+        else:
+            replacement_levels[pos] = eligible_players['FantasyPoints'].min()
+    return replacement_levels
 
+def calculate_por(player_pool, replacement_levels):
+    def get_replacement_level(pos_list):
+        pos_scores = [replacement_levels.get(pos, 0) for pos in pos_list]
+        return min(pos_scores) if pos_scores else 0
+    player_pool['ReplacementLevel'] = player_pool['Pos'].apply(get_replacement_level)
+    player_pool['PORP'] = player_pool['FantasyPoints'] - player_pool['ReplacementLevel']
+    return player_pool.sort_values(by='PORP', ascending=False)
+
+# ====== LIVE DRAFT ASSISTANT FUNCTIONS (inlined) ======
+def update_player_pool(player_pool, drafted_players):
+    return player_pool[~player_pool['Player'].isin(drafted_players)].reset_index(drop=True)
+
+def update_replacement_levels(player_pool, roster_slots, num_teams):
+    return calculate_positional_replacement_levels(player_pool, roster_slots, num_teams)
+
+def get_team_needs(team_roster, roster_slots):
+    pos_counts = defaultdict(int)
+    for pos_list in team_roster:
+        for pos in pos_list:
+            pos_counts[pos] += 1
+    needs = {}
+    for pos in set(roster_slots):
+        if pos not in ['UTIL', 'BENCH']:
+            current = pos_counts.get(pos, 0)
+            required = roster_slots.count(pos)
+            if current < required:
+                needs[pos] = required - current
+    return needs
+
+def live_draft_suggestions(player_pool, drafted_players, roster_slots, num_teams, user_team_roster):
+    updated_pool = update_player_pool(player_pool, drafted_players)
+    replacement_levels = update_replacement_levels(updated_pool, roster_slots, num_teams)
+    updated_pool = calculate_por(updated_pool, replacement_levels)
+    team_needs = get_team_needs(user_team_roster, roster_slots)
+    best_overall = updated_pool.sort_values(by='PORP', ascending=False).head(10)
+    best_by_position = {}
+    for pos in team_needs:
+        eligible = updated_pool[updated_pool['Pos'].apply(lambda x: pos in x)].sort_values(by='PORP', ascending=False).head(5)
+        best_by_position[pos] = eligible[['Player', 'Pos', 'FantasyPoints', 'PORP']]
+    return best_overall, best_by_position
+
+def analyze_opponent_builds(all_teams_rosters, roster_slots):
+    team_summary = {}
+    for team, roster in all_teams_rosters.items():
+        pos_counts = defaultdict(int)
+        for pos_list in roster:
+            for pos in pos_list:
+                pos_counts[pos] += 1
+        team_summary[team] = {pos: pos_counts.get(pos, 0) for pos in set(roster_slots)}
+    return pd.DataFrame(team_summary)
+
+def build_draft_contingency_tree(player_pool, drafted_players, targets, roster_slots, num_teams):
+    updated_pool = update_player_pool(player_pool, drafted_players)
+    replacement_levels = update_replacement_levels(updated_pool, roster_slots, num_teams)
+    updated_pool = calculate_por(updated_pool, replacement_levels)
+    tree = {}
+    for player in targets:
+        if player in updated_pool['Player'].values:
+            alt_pool = updated_pool[updated_pool['Player'] != player]
+            fallback = alt_pool.sort_values(by='PORP', ascending=False).head(3)
+            tree[player] = fallback[['Player', 'Pos', 'FantasyPoints', 'PORP']]
+    return tree
+
+def add_pick(player_name, drafted_players, all_teams_rosters=None, team_name=None, player_data=None):
+    drafted_players.append(player_name)
+    if all_teams_rosters is not None and team_name is not None and player_data is not None:
+        pos_list = player_data[player_data['Player'] == player_name]['Pos'].values
+        if len(pos_list) > 0:
+            all_teams_rosters.setdefault(team_name, []).append(pos_list[0])
+
+# ====== STREAMLIT UI CODE ======
 st.set_page_config(page_title="Fantasy Baseball Draft Assistant", layout="wide")
 
 st.title("⚾ Live Draft Assistant Dashboard")
 
-# Load data
 all_players = pd.read_csv(ALL_PLAYERS_PATH)
 
 # Session state
